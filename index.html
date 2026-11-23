@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CampusBookHub | Digital Library</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <div class="logo">📚 CampusBookHub</div>
+    <nav>
+        <button onclick="showPage('browse')">Browse Books</button>
+        <button onclick="showPage('add')">Add Book</button>
+        <button onclick="showPage('requests')">Requests</button>
+        <button onclick="showPage('mine')">My Books</button>
+    </nav>
+</header>
+
+<main>
+	<section class="hero">
+
+    <div class="hero-decorations">
+        <span class="decoration book-one">📚</span>
+        <span class="decoration pencil">✏️</span>
+        <span class="decoration notebook">📓</span>
+        <span class="decoration book-two">📖</span>
+        <span class="decoration stationery">🖊️</span>
+        <span class="decoration bookmark">🔖</span>
+        <span class="decoration ruler">📏</span>
+        <span class="decoration bulb">💡</span>
+    </div>
+
+    <div class="hero-content">
+        <span class="hero-tag">📚 YOUR CAMPUS. YOUR LIBRARY.</span>
+        <h1>Share Books. Share Knowledge.</h1>
+        <p>Discover, borrow, exchange and donate books
+           within your campus community.</p>
+    </div>
+
+</section>
+
+    <section class="stats">
+        <div class="stat">
+            <h2 id="totalBooks">0</h2>
+            <p>Total Books</p>
+        </div>
+        <div class="stat">
+            <h2 id="availableBooks">0</h2>
+            <p>Available Books</p>
+        </div>
+        <div class="stat">
+            <h2 id="totalRequests">0</h2>
+            <p>Book Requests</p>
+        </div>
+    </section>
+
+    <!-- BROWSE BOOKS -->
+    <section id="browse" class="page">
+        <h2>Explore Books</h2>
+
+        <input id="search" type="text"
+               placeholder="Search title or author..."
+               oninput="renderBooks()">
+
+        <select id="category" onchange="renderBooks()">
+            <option value="">All Categories</option>
+            <option>Programming</option>
+            <option>Science</option>
+            <option>Fiction</option>
+            <option>Engineering</option>
+            <option>Other</option>
+        </select>
+
+        <div id="bookList" class="book-grid"></div>
+    </section>
+
+    <!-- ADD BOOK -->
+    <section id="add" class="page hidden">
+        <h2>List Your Book</h2>
+
+        <form id="bookForm">
+            <input id="title" placeholder="Book Title" required>
+            <input id="author" placeholder="Author Name" required>
+
+            <select id="newCategory" required>
+                <option value="">Choose Category</option>
+                <option>Programming</option>
+                <option>Science</option>
+                <option>Fiction</option>
+                <option>Engineering</option>
+                <option>Other</option>
+            </select>
+
+            <select id="condition" required>
+                <option value="">Book Condition</option>
+                <option>New</option>
+                <option>Good</option>
+                <option>Used</option>
+            </select>
+
+            <select id="method" required>
+                <option value="">Choose Listing Type</option>
+                <option>Borrow</option>
+                <option>Exchange</option>
+                <option>Donate</option>
+            </select>
+
+            <input id="owner" placeholder="Your Name" required>
+            <button type="submit">Add Book</button>
+        </form>
+    </section>
+
+    <!-- REQUESTS -->
+    <section id="requests" class="page hidden">
+        <h2>Book Requests</h2>
+        <div id="requestList"></div>
+    </section>
+
+    <!-- MY BOOKS -->
+    <section id="mine" class="page hidden">
+        <h2>My Listed Books</h2>
+        <div id="myBookList" class="book-grid"></div>
+    </section>
+</main>
+
+<footer>
+    <p>CampusBookHub © 2026 | Read. Share. Reuse.</p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
