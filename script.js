@@ -1,53 +1,47 @@
-// Load saved information
-let books = JSON.parse(localStorage.getItem("books")) || [
-    {
-        id: 1,
-        title: "Java Programming",
-        author: "Herbert Schildt",
-        category: "Programming",
-        condition: "Good",
-        method: "Borrow",
-        owner: "Rahul",
-        status: "Available",
-        reuse: 0
-    },
-    {
-        id: 2,
-        title: "The Alchemist",
-        author: "Paulo Coelho",
-        category: "Fiction",
-        condition: "New",
-        method: "Exchange",
-        owner: "Ananya",
-        status: "Available",
-        reuse: 0
-    },
-    {
-        id: 3,
-        title: "Engineering Mathematics",
-        author: "B.S. Grewal",
-        category: "Engineering",
-        condition: "Used",
-        method: "Donate",
-        owner: "Priya",
-        status: "Available",
-        reuse: 0
-    }
-];
+let books = [];
+let requests = [];
+let currentUser = null;
 
-let requests = JSON.parse(localStorage.getItem("requests")) || [];
+const db = window.supabaseClient;
 
-function saveData() {
-    localStorage.setItem("books", JSON.stringify(books));
-    localStorage.setItem("requests", JSON.stringify(requests));
+// ===============================
+// HELPERS
+// ===============================
+
+function escapeHTML(value) {
+    return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    }[char]));
 }
 
+function showMessage(message) {
+    const element = document.getElementById("authMessage");
+    if (element) element.textContent = message;
+}
+
+// ===============================
+// PAGE NAVIGATION
+// ===============================
+
 function showPage(page) {
+    if (page !== "auth" && !currentUser) {
+        page = "auth";
+        showMessage("Please login to access CampusBookHub.");
+    }
+
     document.querySelectorAll(".page").forEach(section => {
         section.classList.add("hidden");
     });
 
-    document.getElementById(page).classList.remove("hidden");
+    const target = document.getElementById(page);
+
+    if (target) {
+        target.classList.remove("hidden");
+    }
 
     renderBooks();
     renderRequests();
@@ -55,22 +49,71 @@ function showPage(page) {
     updateStats();
 }
 
-// Display books
+// ===============================
+// LOAD DATA FROM SUPABASE
+// ===============================
+
+async function loadData() {
+    if (!currentUser) return;
+
+    const { data: bookData, error: bookError } =
+        await db.from("books")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+    if (bookError) {
+        alert("Could not load books: " + bookError.message);
+        return;
+    }
+
+    const { data: requestData, error: requestError } =
+        await db.from("book_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+    if (requestError) {
+        alert("Could not load requests: " + requestError.message);
+        return;
+    }
+
+    books = bookData || [];
+    requests = requestData || [];
+
+    renderBooks();
+    renderRequests();
+    renderMyBooks();
+    updateStats();
+}
+
+// ===============================
+// BROWSE BOOKS
+// ===============================
+
 function renderBooks() {
     const list = document.getElementById("bookList");
     if (!list) return;
 
-    const search = document.getElementById("search").value.toLowerCase();
-    const category = document.getElementById("category").value;
+    const searchElement = document.getElementById("search");
+    const categoryElement = document.getElementById("category");
+
+    const search = searchElement ? searchElement.value.toLowerCase() : "";
+    const category = categoryElement ? categoryElement.value : "";
 
     const filtered = books.filter(book =>
-        book.status === "Available" &&
-        (book.title.toLowerCase().includes(search) ||
-         book.author.toLowerCase().includes(search)) &&
+        book.status === "available" &&
+        (
+            (book.title || "").toLowerCase().includes(search) ||
+            (book.author || "").toLowerCase().includes(search)
+        ) &&
         (!category || book.category === category)
     );
 
     list.innerHTML = "";
+
+    if (!currentUser) {
+        list.innerHTML = "<p>Please login to browse books.</p>";
+        return;
+    }
 
     if (filtered.length === 0) {
         list.innerHTML = "<p>No available books found.</p>";
@@ -78,121 +121,178 @@ function renderBooks() {
     }
 
     filtered.forEach(book => {
+        const isOwner = book.owner_id === currentUser.id;
+
         list.innerHTML += `
             <div class="book-card">
-                <h3>${book.title}</h3>
-                <p>Author: ${book.author}</p>
-                <p>Category: ${book.category}</p>
-                <p>Condition: ${book.condition}</p>
-                <p>Owner: ${book.owner}</p>
-                <p>Type: ${book.method}</p>
-                <p class="status">${book.status}</p>
-                <button onclick="sendRequest(${book.id})">
-                    Request Book
-                </button>
+                <h3>${escapeHTML(book.title)}</h3>
+                <p>Author: ${escapeHTML(book.author)}</p>
+                <p>Category: ${escapeHTML(book.category)}</p>
+                <p>Description: ${escapeHTML(book.description || "No description added.")}</p>
+                <p>Condition: ${escapeHTML(book.condition)}</p>
+                <p>Owner: ${escapeHTML(book.owner_name)}</p>
+                <p>Type: ${escapeHTML(book.book_type)}</p>
+                <p class="status">Available</p>
+
+                ${!isOwner ? `
+                    <button onclick="sendRequest('${book.id}')">
+                        Request Book
+                    </button>
+                ` : `
+                    <p>Your listing</p>
+                `}
             </div>
         `;
     });
 }
+// ===============================
+// ADD BOOK
+// ===============================
 
-// Add a new book
-document.getElementById("bookForm").addEventListener("submit", function(e) {
-    e.preventDefault();
+const bookForm = document.getElementById("bookForm");
 
-    const newBook = {
-        id: Date.now(),
-        title: document.getElementById("title").value.trim(),
-        author: document.getElementById("author").value.trim(),
-        category: document.getElementById("newCategory").value,
-        condition: document.getElementById("condition").value,
-        method: document.getElementById("method").value,
-        owner: document.getElementById("owner").value.trim(),
-        status: "Available",
-        reuse: 0
-    };
+if (bookForm) {
+    bookForm.addEventListener("submit", async function(e) {
+        e.preventDefault();
 
-    books.push(newBook);
-    saveData();
+        if (!currentUser) {
+            alert("Please login first.");
+            showPage("auth");
+            return;
+        }
 
-    this.reset();
+        const newBook = {
+            owner_id: currentUser.id,
+            owner_name: document.getElementById("owner").value.trim(),
+            title: document.getElementById("title").value.trim(),
+            author: document.getElementById("author").value.trim(),
+            category: document.getElementById("newCategory").value,
+            condition: document.getElementById("condition").value,
+	    description: document.getElementById("description").value.trim(),
+            book_type: document.getElementById("method").value.toLowerCase(),
+            status: "available"
+        };
 
-    alert("Your book has been added!");
-    showPage("browse");
-});
+        const { error } = await db.from("books").insert([newBook]);
 
-// Send a book request
-function sendRequest(bookId) {
-    const book = books.find(b => b.id === bookId);
+        if (error) {
+            alert("Could not add book: " + error.message);
+            return;
+        }
 
-    if (!book || book.status !== "Available") {
-        alert("This book is not available.");
+        bookForm.reset();
+
+        alert("Book added successfully!");
+        await loadData();
+        showPage("browse");
+    });
+}
+
+// ===============================
+// SEND BOOK REQUEST
+// ===============================
+
+async function sendRequest(bookId) {
+    if (!currentUser) {
+        showPage("auth");
         return;
     }
 
-    const requester = prompt("Enter your name:");
+    const book = books.find(b => b.id === bookId);
 
-    if (!requester || !requester.trim()) return;
+    if (!book || book.status !== "available") {
+        alert("This book is no longer available.");
+        return;
+    }
 
-    if (requester.trim().toLowerCase() === book.owner.toLowerCase()) {
+    if (book.owner_id === currentUser.id) {
         alert("You cannot request your own book.");
         return;
     }
 
+    const requesterName = prompt("Enter your name:");
+
+    if (!requesterName || !requesterName.trim()) return;
+
     const alreadyRequested = requests.some(r =>
-        r.bookId === bookId &&
-        r.requester.toLowerCase() === requester.trim().toLowerCase() &&
-        r.status === "Pending"
+        r.book_id === bookId &&
+        r.requester_id === currentUser.id &&
+        r.status === "pending"
     );
 
     if (alreadyRequested) {
-        alert("You already requested this book.");
+        alert("You already have a pending request for this book.");
         return;
     }
 
-    requests.push({
-        id: Date.now(),
-        bookId: bookId,
-        requester: requester.trim(),
-        owner: book.owner,
-        status: "Pending",
-        date: new Date().toLocaleDateString()
-    });
+    const newRequest = {
+        book_id: bookId,
+        requester_id: currentUser.id,
+        requester_name: requesterName.trim(),
+        requester_email: currentUser.email,
+        request_type: book.book_type,
+        status: "pending"
+    };
 
-    saveData();
-    updateStats();
+    const { error } = await db.from("book_requests").insert([newRequest]);
+
+    if (error) {
+        alert("Could not send request: " + error.message);
+        return;
+    }
 
     alert("Book request sent successfully!");
+    await loadData();
 }
 
-// Display requests
+// ===============================
+// DISPLAY REQUESTS
+// ===============================
+
 function renderRequests() {
     const list = document.getElementById("requestList");
     if (!list) return;
 
     list.innerHTML = "";
 
-    if (requests.length === 0) {
+    if (!currentUser) {
+        list.innerHTML = "<p>Please login to view requests.</p>";
+        return;
+    }
+
+    const myRequests = requests.filter(request => {
+        const book = books.find(b => b.id === request.book_id);
+
+        return request.requester_id === currentUser.id ||
+               (book && book.owner_id === currentUser.id);
+    });
+
+    if (myRequests.length === 0) {
         list.innerHTML = "<p>No book requests yet.</p>";
         return;
     }
 
-    requests.forEach(request => {
-        const book = books.find(b => b.id === request.bookId);
+    myRequests.forEach(request => {
+        const book = books.find(b => b.id === request.book_id);
         if (!book) return;
+
+        const isOwner = book.owner_id === currentUser.id;
+        const status = request.status;
 
         list.innerHTML += `
             <div class="request-card">
-                <h3>${book.title}</h3>
-                <p>Requested by: ${request.requester}</p>
-                <p>Book Owner: ${request.owner}</p>
-                <p>Date: ${request.date}</p>
-                <p>Status: <strong>${request.status}</strong></p>
+                <h3>${escapeHTML(book.title)}</h3>
+                <p>Requested by: ${escapeHTML(request.requester_name)}</p>
+                <p>Book Owner: ${escapeHTML(book.owner_name)}</p>
+                <p>Type: ${escapeHTML(request.request_type)}</p>
+                <p>Status: <strong>${escapeHTML(status)}</strong></p>
 
-                ${request.status === "Pending" ? `
-                    <button onclick="updateRequest(${request.id}, 'Accepted')">
+                ${isOwner && status === "pending" ? `
+                    <button onclick="updateRequest('${request.id}', 'approved')">
                         Accept
                     </button>
-                    <button onclick="updateRequest(${request.id}, 'Rejected')">
+
+                    <button onclick="updateRequest('${request.id}', 'rejected')">
                         Reject
                     </button>
                 ` : ""}
@@ -201,117 +301,421 @@ function renderRequests() {
     });
 }
 
-// Accept or reject requests
-function updateRequest(requestId, decision) {
+// ===============================
+// ACCEPT / REJECT REQUEST
+// ===============================
+
+async function updateRequest(requestId, decision) {
+    if (!currentUser) return;
+
     const request = requests.find(r => r.id === requestId);
 
-    if (!request || request.status !== "Pending") return;
+    if (!request || request.status !== "pending") return;
 
-    const book = books.find(b => b.id === request.bookId);
+    const book = books.find(b => b.id === request.book_id);
 
-    if (decision === "Accepted") {
-        if (!book || book.status !== "Available") {
+    if (!book || book.owner_id !== currentUser.id) {
+        alert("Only the book owner can respond to this request.");
+        return;
+    }
+
+    if (decision === "approved") {
+        if (book.status !== "available") {
             alert("This book is no longer available.");
             return;
         }
 
-        book.status = "Borrowed";
-        book.borrower = request.requester;
-        book.reuse = (book.reuse || 0) + 1;
+        const { error: bookError } = await db.from("books")
+            .update({ status: "borrowed" })
+            .eq("id", book.id);
 
-        // Reject other pending requests for this book
-        requests.forEach(r => {
-            if (r.bookId === book.id && r.status === "Pending") {
-                r.status = "Rejected";
+        if (bookError) {
+            alert("Could not update book: " + bookError.message);
+            return;
+        }
+
+        // Reject other pending requests for the same book
+        const otherRequests = requests.filter(r =>
+            r.book_id === book.id &&
+            r.id !== request.id &&
+            r.status === "pending"
+        );
+
+        for (const other of otherRequests) {
+            const { error } = await db.from("book_requests")
+                .update({ status: "rejected" })
+                .eq("id", other.id);
+
+            if (error) {
+                alert("Could not update another request: " + error.message);
             }
-        });
-
-        request.status = "Accepted";
-    } else {
-        request.status = "Rejected";
+        }
     }
 
-    saveData();
-    renderRequests();
-    renderBooks();
-    renderMyBooks();
-    updateStats();
+    const { error: requestError } = await db.from("book_requests")
+        .update({ status: decision })
+        .eq("id", request.id);
+
+    if (requestError) {
+        alert("Could not update request: " + requestError.message);
+        return;
+    }
+
+    alert(decision === "approved" ? "Request accepted!" : "Request rejected.");
+
+    await loadData();
 }
 
-// Display books listed by a particular owner
+// ===============================
+// MY BOOKS
+// ===============================
+
 function renderMyBooks() {
     const list = document.getElementById("myBookList");
     if (!list) return;
 
     list.innerHTML = "";
 
-    if (books.length === 0) {
-        list.innerHTML = "<p>No books have been listed.</p>";
+    if (!currentUser) {
+        list.innerHTML = "<p>Please login to view your books.</p>";
         return;
     }
 
-    books.forEach(book => {
+    const myBooks = books.filter(book => book.owner_id === currentUser.id);
+
+    if (myBooks.length === 0) {
+        list.innerHTML = "<p>You haven't listed any books yet.</p>";
+        return;
+    }
+
+    myBooks.forEach(book => {
         list.innerHTML += `
             <div class="book-card">
-                <h3>${book.title}</h3>
-                <p>Author: ${book.author}</p>
-                <p>Owner: ${book.owner}</p>
-                <p>Status: <strong>${book.status}</strong></p>
-                <p>Times reused: ${book.reuse || 0}</p>
-                ${book.status === "Borrowed" ? `
-                    <button onclick="returnBook(${book.id})">
+                <h3>${escapeHTML(book.title)}</h3>
+                <p>Author: ${escapeHTML(book.author)}</p>
+                <p>Category: ${escapeHTML(book.category)}</p>
+                <p>Description: ${escapeHTML(book.description || "No description added.")}</p>
+                <p>Condition: ${escapeHTML(book.condition)}</p>
+                <p>Type: ${escapeHTML(book.book_type)}</p>
+                <p>Status: <strong>${escapeHTML(book.status)}</strong></p>
+
+                ${book.status === "borrowed" ? `
+                    <button onclick="returnBook('${book.id}')">
                         Mark Returned
                     </button>
                 ` : ""}
-                <button onclick="deleteBook(${book.id})">
-                    Delete Listing
-                </button>
+
+               <button onclick="editBook('${book.id}')">
+    Edit
+</button>
+
+<button onclick="deleteBook('${book.id}')">
+    Delete Listing
+</button>
             </div>
         `;
     });
 }
+// ===============================
+// RETURN BOOK
+// ===============================
 
-// Mark a borrowed book as returned
-function returnBook(bookId) {
+async function returnBook(bookId) {
+    if (!currentUser) return;
+
     const book = books.find(b => b.id === bookId);
 
-    if (!book || book.status !== "Borrowed") return;
+    if (!book || book.owner_id !== currentUser.id ||
+        book.status !== "borrowed") {
+        alert("This book cannot be returned from here.");
+        return;
+    }
 
-    book.status = "Available";
-    delete book.borrower;
+    const { error: bookError } = await db.from("books")
+        .update({ status: "available" })
+        .eq("id", bookId);
 
-    requests.forEach(r => {
-        if (r.bookId === bookId && r.status === "Accepted") {
-            r.status = "Returned";
+    if (bookError) {
+        alert("Could not return book: " + bookError.message);
+        return;
+    }
+
+    const approvedRequests = requests.filter(r =>
+        r.book_id === bookId && r.status === "approved"
+    );
+
+    for (const request of approvedRequests) {
+        const { error } = await db.from("book_requests")
+            .update({ status: "returned" })
+            .eq("id", request.id);
+
+        if (error) {
+            alert("Book returned, but request status could not be updated.");
         }
-    });
+    }
 
-    saveData();
-    showPage("mine");
+    alert("Book marked as returned!");
+    await loadData();
 }
 
-// Delete a listing
-function deleteBook(bookId) {
+// ===============================
+// DELETE BOOK
+// ===============================
+
+async function deleteBook(bookId) {
+    if (!currentUser) return;
+
     if (!confirm("Are you sure you want to delete this book?")) return;
 
-    books = books.filter(b => b.id !== bookId);
-    requests = requests.filter(r => r.bookId !== bookId);
+    const book = books.find(b => b.id === bookId);
 
-    saveData();
-    showPage("mine");
+    if (!book || book.owner_id !== currentUser.id) {
+        alert("You can only delete your own listings.");
+        return;
+    }
+
+    const { error } = await db.from("books")
+        .delete()
+        .eq("id", bookId);
+
+    if (error) {
+        alert("Could not delete book: " + error.message);
+        return;
+    }
+
+    alert("Book listing deleted.");
+    await loadData();
 }
 
-// Dashboard statistics
+// ===============================
+// STATISTICS
+// ===============================
+
 function updateStats() {
-    document.getElementById("totalBooks").textContent = books.length;
+    const total = document.getElementById("totalBooks");
+    const available = document.getElementById("availableBooks");
+    const totalRequests = document.getElementById("totalRequests");
 
-    document.getElementById("availableBooks").textContent =
-        books.filter(b => b.status === "Available").length;
+    if (total) total.textContent = books.length;
 
-    document.getElementById("totalRequests").textContent =
-        requests.length;
+    if (available) {
+        available.textContent =
+            books.filter(b => b.status === "available").length;
+    }
+
+    if (totalRequests) totalRequests.textContent = requests.length;
 }
 
-// Start website
-saveData();
-showPage("browse");
+// ===============================
+// AUTHENTICATION
+// ===============================
+
+const authForm = document.getElementById("authForm");
+const signupBtn = document.getElementById("signupBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const userInfo = document.getElementById("userInfo");
+
+if (authForm) {
+    authForm.addEventListener("submit", async function(e) {
+        e.preventDefault();
+
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        showMessage("Logging in...");
+
+        const { data, error } = await db.auth.signInWithPassword({
+            email,
+            password
+        });
+
+        if (error) {
+            showMessage(error.message);
+            return;
+        }
+
+        currentUser = data.user;
+
+        if (userInfo) {
+            userInfo.textContent = "Logged in as: " + currentUser.email;
+        }
+
+        if (logoutBtn) logoutBtn.classList.remove("hidden");
+
+        await loadData();
+        showMessage("Login successful!");
+        showPage("browse");
+    });
+}
+
+// SIGN UP
+if (signupBtn) {
+    signupBtn.addEventListener("click", async function() {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        if (!email || !password) {
+            showMessage("Enter email and password first.");
+            return;
+        }
+
+        if (password.length < 6) {
+            showMessage("Password must be at least 6 characters.");
+            return;
+        }
+
+        showMessage("Creating account...");
+
+        const { data, error } = await db.auth.signUp({
+            email,
+            password
+        });
+
+        if (error) {
+            showMessage(error.message);
+            return;
+        }
+
+        if (data.session) {
+            currentUser = data.user;
+
+            if (userInfo) {
+                userInfo.textContent = "Logged in as: " + currentUser.email;
+            }
+
+            if (logoutBtn) logoutBtn.classList.remove("hidden");
+
+            await loadData();
+            showPage("browse");
+            showMessage("Account created successfully!");
+        } else {
+            showMessage("Account created! Now login using your email and password.");
+        }
+    });
+}
+
+// LOGOUT
+if (logoutBtn) {
+    logoutBtn.addEventListener("click", async function() {
+        const { error } = await db.auth.signOut();
+
+        if (error) {
+            showMessage(error.message);
+            return;
+        }
+
+        currentUser = null;
+        books = [];
+        requests = [];
+
+        if (userInfo) userInfo.textContent = "";
+
+        logoutBtn.classList.add("hidden");
+
+        showMessage("Logged out successfully.");
+        showPage("auth");
+    });
+}
+
+// ===============================
+// CHECK EXISTING SESSION
+// ===============================
+
+async function initializeApp() {
+    const { data, error } = await db.auth.getSession();
+
+    if (error) {
+        showMessage(error.message);
+        showPage("auth");
+        return;
+    }
+
+    currentUser = data.session ? data.session.user : null;
+
+    if (currentUser) {
+        if (userInfo) {
+            userInfo.textContent = "Logged in as: " + currentUser.email;
+        }
+
+        if (logoutBtn) logoutBtn.classList.remove("hidden");
+
+        await loadData();
+        showPage("browse");
+    } else {
+        if (logoutBtn) logoutBtn.classList.add("hidden");
+        showPage("auth");
+    }
+}
+
+initializeApp();
+async function logoutUser() {
+    const { error } = await window.supabaseClient.auth.signOut();
+
+    if (error) {
+        alert("Logout failed: " + error.message);
+        return;
+    }
+
+    currentUser = null;
+    showPage("auth");
+    alert("Logged out successfully!");
+}
+function editBook(bookId) {
+    const book = books.find(b => b.id === bookId);
+
+    if (!book || book.owner_id !== currentUser.id) {
+        alert("You can only edit your own books.");
+        return;
+    }
+
+    document.getElementById("editBookId").value = book.id;
+    document.getElementById("editTitle").value = book.title || "";
+    document.getElementById("editAuthor").value = book.author || "";
+    document.getElementById("editDescription").value = book.description || "";
+    document.getElementById("editCategory").value = book.category || "Other";
+    document.getElementById("editCondition").value = book.condition || "Good";
+    document.getElementById("editMethod").value = book.book_type || "Exchange";
+
+    document.getElementById("editBookSection").classList.remove("hidden");
+
+    document.getElementById("editBookSection").scrollIntoView({
+        behavior: "smooth"
+    });
+}
+
+function cancelEdit() {
+    document.getElementById("editBookSection").classList.add("hidden");
+    document.getElementById("editBookForm").reset();
+}
+
+document.getElementById("editBookForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
+
+    const bookId = document.getElementById("editBookId").value;
+
+    const { error } = await db
+        .from("books")
+        .update({
+            title: document.getElementById("editTitle").value.trim(),
+            author: document.getElementById("editAuthor").value.trim(),
+            description: document.getElementById("editDescription").value.trim(),
+            category: document.getElementById("editCategory").value,
+            condition: document.getElementById("editCondition").value,
+            book_type: document.getElementById("editMethod").value
+        })
+        .eq("id", bookId)
+        .eq("owner_id", currentUser.id);
+
+    if (error) {
+        alert("Error updating book: " + error.message);
+        return;
+    }
+
+    alert("Book updated successfully!");
+
+    document.getElementById("editBookSection").classList.add("hidden");
+    document.getElementById("editBookForm").reset();
+
+    await loadData();
+    showPage("mine");
+});
