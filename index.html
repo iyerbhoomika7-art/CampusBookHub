@@ -10,16 +10,38 @@
 
 <header>
     <div class="logo">📚 CampusBookHub</div>
-    <nav>
-        <button onclick="showPage('browse')">Browse Books</button>
-        <button onclick="showPage('add')">Add Book</button>
-        <button onclick="showPage('requests')">Requests</button>
-        <button onclick="showPage('mine')">My Books</button>
-    </nav>
+   <nav>
+    <button onclick="showPage('browse')">Browse Books</button>
+    <button onclick="showPage('add')">Add Book</button>
+    <button onclick="showPage('requests')">Requests</button>
+    <button onclick="showPage('mine')">My Books</button>
+    <button onclick="showPage('myRequests')">My Requests</button>
+    <button onclick="logoutUser()">Logout</button>
+</nav>
 </header>
 
 <main>
-	<section class="hero">
+<!-- LOGIN / SIGNUP -->
+<section id="auth" class="page">
+    <h2>Welcome to CampusBookHub</h2>
+    <p>Login or create an account to share books with your campus.</p>
+
+    <form id="authForm">
+        <input id="email" type="email" placeholder="Email Address" required>
+
+        <input id="password" type="password" placeholder="Password" required>
+
+        <button type="submit" id="loginBtn">Login</button>
+        <button type="button" id="signupBtn">Sign Up</button>
+    </form>
+
+    <p id="authMessage"></p>
+    <p id="userInfo"></p>
+
+    <button id="logoutBtn"
+	type="button">Logout</button>
+</section>	
+<section class="hero">
 
     <div class="hero-decorations">
         <span class="decoration book-one">📚</span>
@@ -83,6 +105,7 @@
         <form id="bookForm">
             <input id="title" placeholder="Book Title" required>
             <input id="author" placeholder="Author Name" required>
+        <textarea id="description" placeholder="Write a short description about the book..."></textarea>
 
             <select id="newCategory" required>
                 <option value="">Choose Category</option>
@@ -118,16 +141,65 @@
         <div id="requestList"></div>
     </section>
 
-    <!-- MY BOOKS -->
-    <section id="mine" class="page hidden">
-        <h2>My Listed Books</h2>
-        <div id="myBookList" class="book-grid"></div>
-    </section>
+   <!-- MY BOOKS -->
+<section id="mine" class="page hidden">
+    <h2>My Listed Books</h2>
+    <div id="myBookList" class="book-grid"></div>
+
+    <!-- EDIT BOOK FORM -->
+    <div id="editBookSection" class="hidden">
+        <h2>Edit Book Listing</h2>
+
+        <form id="editBookForm">
+            <input type="hidden" id="editBookId">
+
+            <input id="editTitle" placeholder="Book Title" required>
+            <input id="editAuthor" placeholder="Author Name" required>
+
+            <textarea id="editDescription" placeholder="Book Description"></textarea>
+
+            <select id="editCategory" required>
+                <option>Programming</option>
+                <option>Science</option>
+                <option>Fiction</option>
+                <option>Engineering</option>
+                <option>Other</option>
+            </select>
+
+            <select id="editCondition" required>
+                <option>New</option>
+                <option>Good</option>
+                <option>Used</option>
+            </select>
+
+            <select id="editMethod" required>
+                <option>Borrow</option>
+                <option>Exchange</option>
+                <option>Donate</option>
+            </select>
+
+            <button type="submit">Save Changes</button>
+            <button type="button" onclick="cancelEdit()">Cancel</button>
+        </form>
+    </div>
+</section>
 </main>
 
 <footer>
     <p>CampusBookHub © 2026 | Read. Share. Reuse.</p>
 </footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+    const SUPABASE_URL = "https://wupjczbfjvlltauldnxr.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_afHPO8HNILBqLT3fj2iDlQ_eBei3YpI";
+
+    window.supabaseClient = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+    );
+</script>
 
 <script src="script.js"></script>
 </body>
